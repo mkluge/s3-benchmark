@@ -135,7 +135,7 @@ func deleteAllObjects() {
 			VersionIdMarker: versionId,
 			MaxKeys:         1000,
 		}
-		if listVersions, listErr := client.ListObjectVersions(in); listErr == nil {
+		if listVersions, listErr := client.ListObjectVersions(context.TODO(), in); listErr == nil {
 			delete := &s3.Delete{Quiet: aws.Bool(true)}
 			for _, version := range listVersions.Versions {
 				delete.Objects = append(delete.Objects, &s3.ObjectIdentifier{Key: version.Key, VersionId: version.VersionId})
