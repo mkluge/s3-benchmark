@@ -32,6 +32,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 // Global variables
@@ -136,7 +137,13 @@ func deleteAllObjects() {
 			MaxKeys:         1000,
 		}
 		if listVersions, listErr := client.ListObjectVersions(context.TODO(), in); listErr == nil {
-			delete := &s3.Delete{Quiet: aws.Bool(true)}
+
+			_, err := client.DeleteObjects(context.TODO(),
+				&s3.DeleteObjectsInput{
+					Bucket: aws.String(bucketName),
+					Delete: &types.Delete{Objects: objectIds},
+				})
+
 			for _, version := range listVersions.Versions {
 				delete.Objects = append(delete.Objects, &s3.ObjectIdentifier{Key: version.Key, VersionId: version.VersionId})
 			}
