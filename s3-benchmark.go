@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/md5"
 	"crypto/sha1"
@@ -27,10 +28,11 @@ import (
 	"time"
 
 	"code.cloudfoundry.org/bytefmt"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 // Global variables
@@ -72,19 +74,26 @@ var HTTPTransport http.RoundTripper = &http.Transport{
 var httpClient = &http.Client{Transport: HTTPTransport}
 
 func getS3Client() *s3.S3 {
+
+	awsConfig, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(region)),
+		config.with
+	if err != nil {
+		// handle error
+	}
+
 	// Build our config
 	creds := credentials.NewStaticCredentials(access_key, secret_key, "")
-	loglevel := aws.LogOff
+	loglevel := aws.LogDebugWithRequestErrors
 	// Build the rest of the configuration
 	awsConfig := &aws.Config{
-		Region:               aws.String(region),
 		Endpoint:             aws.String(url_host),
 		Credentials:          creds,
 		LogLevel:             &loglevel,
 		S3ForcePathStyle:     aws.Bool(true),
 		S3Disable100Continue: aws.Bool(true),
 		// Comment following to use default transport
-		HTTPClient: &http.Client{Transport: HTTPTransport},
+		// HTTPClient: &http.Client{Transport: HTTPTransport},
 	}
 	session := session.New(awsConfig)
 	client := s3.New(session)
@@ -292,7 +301,7 @@ func main() {
 	myflag.StringVar(&secret_key, "s", "", "Secret key")
 	myflag.StringVar(&url_host, "u", "http://s3.wasabisys.com", "URL for host with method prefix")
 	myflag.StringVar(&bucket, "b", "wasabi-benchmark-bucket", "Bucket for testing")
-	myflag.StringVar(&region, "r", "us-east-1", "Region for testing")
+	myflag.StringVar(&region, "r", "US", "Region for testing")
 	myflag.IntVar(&duration_secs, "d", 60, "Duration of each test in seconds")
 	myflag.IntVar(&threads, "t", 1, "Number of threads to run")
 	myflag.IntVar(&loops, "l", 1, "Number of times to repeat test")
