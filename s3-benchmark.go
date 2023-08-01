@@ -32,7 +32,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go/aws/session"
 )
 
 // Global variables
@@ -75,28 +74,25 @@ var httpClient = &http.Client{Transport: HTTPTransport}
 
 func getS3Client() *s3.S3 {
 
-	awsConfig, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithRegion(region)),
-		config.with
+	// Build our config
+	creds := aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(access_key, secret_key))
+	_, err := creds.Retrieve(context.TODO())
 	if err != nil {
-		// handle error
+		log.Fatalf("unable to create credentials")
 	}
 
-	// Build our config
-	creds := credentials.NewStaticCredentials(access_key, secret_key, "")
-	loglevel := aws.LogDebugWithRequestErrors
-	// Build the rest of the configuration
-	awsConfig := &aws.Config{
-		Endpoint:             aws.String(url_host),
-		Credentials:          creds,
-		LogLevel:             &loglevel,
-		S3ForcePathStyle:     aws.Bool(true),
-		S3Disable100Continue: aws.Bool(true),
-		// Comment following to use default transport
-		// HTTPClient: &http.Client{Transport: HTTPTransport},
+	awsConfig, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(region),
+		config.WithCredentialsProvider(creds),
+	)
+	if err != nil {
+		log.Fatalf("unable to create config")
 	}
-	session := session.New(awsConfig)
-	client := s3.New(session)
+
+	client := s3.NewFromConfig(awsConfig, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(url_host)
+		o.UsePathStyle = true
+	})
 	if client == nil {
 		log.Fatalf("FATAL: Unable to create new client.")
 	}
