@@ -75,7 +75,11 @@ var httpClient = &http.Client{Transport: HTTPTransport}
 func getS3Client() *s3.Client {
 
 	// Build our config
-	creds := aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(access_key, secret_key, ""))
+	creds := aws.NewCredentialsCache(
+		credentials.NewStaticCredentialsProvider(
+			access_key,
+			secret_key,
+			""))
 	_, err := creds.Retrieve(context.TODO())
 	if err != nil {
 		log.Fatalf("unable to create credentials")
@@ -105,7 +109,8 @@ func createBucket(ignore_errors bool) {
 	client := getS3Client()
 	// Create our bucket (may already exist without error)
 	in := &s3.CreateBucketInput{Bucket: aws.String(bucket)}
-	if _, err := client.CreateBucket(in); err != nil {
+	if _, err := client.CreateBucket(context.TODO(),
+		in); err != nil {
 		if ignore_errors {
 			log.Printf("WARNING: createBucket %s error, ignoring %v", bucket, err)
 		} else {
@@ -124,7 +129,12 @@ func deleteAllObjects() {
 	var err error
 	for loop := 1; ; loop++ {
 		// Delete all the existing objects and versions in the bucket
-		in := &s3.ListObjectVersionsInput{Bucket: aws.String(bucket), KeyMarker: keyMarker, VersionIdMarker: versionId, MaxKeys: aws.Int64(1000)}
+		in := &s3.ListObjectVersionsInput{
+			Bucket:          aws.String(bucket),
+			KeyMarker:       keyMarker,
+			VersionIdMarker: versionId,
+			MaxKeys:         1000,
+		}
 		if listVersions, listErr := client.ListObjectVersions(in); listErr == nil {
 			delete := &s3.Delete{Quiet: aws.Bool(true)}
 			for _, version := range listVersions.Versions {
