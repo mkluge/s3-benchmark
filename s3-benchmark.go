@@ -72,10 +72,10 @@ var HTTPTransport http.RoundTripper = &http.Transport{
 
 var httpClient = &http.Client{Transport: HTTPTransport}
 
-func getS3Client() *s3.S3 {
+func getS3Client() *s3.Client {
 
 	// Build our config
-	creds := aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(access_key, secret_key))
+	creds := aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(access_key, secret_key, ""))
 	_, err := creds.Retrieve(context.TODO())
 	if err != nil {
 		log.Fatalf("unable to create credentials")
