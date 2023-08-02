@@ -6,9 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
 	"crypto/md5"
-	"crypto/sha1"
 	"crypto/tls"
 	"encoding/base64"
 	"flag"
@@ -20,7 +18,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,7 +37,6 @@ var access_key, secret_key, url_host, bucket, region string
 var duration_secs, threads, loops int
 var object_size uint64
 var object_data []byte
-var object_data_md5 string
 var running_threads, upload_count, download_count, delete_count, upload_slowdown_count, download_slowdown_count, delete_slowdown_count int32
 var endtime, upload_finish, download_finish, delete_finish time.Time
 
@@ -137,32 +133,30 @@ func deleteAllObjects() {
 			MaxKeys:         1000,
 		}
 		if listVersions, listErr := client.ListObjectVersions(context.TODO(), in); listErr == nil {
-
-			_, err := client.DeleteObjects(context.TODO(),
-				&s3.DeleteObjectsInput{
-					Bucket: aws.String(bucketName),
-					Delete: &types.Delete{Objects: objectIds},
-				})
-
+			var objectIds []types.ObjectIdentifier
 			for _, version := range listVersions.Versions {
-				delete.Objects = append(delete.Objects, &s3.ObjectIdentifier{Key: version.Key, VersionId: version.VersionId})
+				objectIds = append(objectIds, types.ObjectIdentifier{Key: version.Key, VersionId: version.VersionId})
 			}
 			for _, marker := range listVersions.DeleteMarkers {
-				delete.Objects = append(delete.Objects, &s3.ObjectIdentifier{Key: marker.Key, VersionId: marker.VersionId})
+				objectIds = append(objectIds, types.ObjectIdentifier{Key: marker.Key, VersionId: marker.VersionId})
 			}
-			if len(delete.Objects) > 0 {
-				// Start a delete routine
-				doDelete := func(bucket string, delete *s3.Delete) {
-					if _, e := client.DeleteObjects(&s3.DeleteObjectsInput{Bucket: aws.String(bucket), Delete: delete}); e != nil {
-						err = fmt.Errorf("DeleteObjects unexpected failure: %s", e.Error())
+			if len(objectIds) > 0 {
+				doDelete := func(bucket string, toDelete []types.ObjectIdentifier) {
+					_, err := client.DeleteObjects(context.TODO(),
+						&s3.DeleteObjectsInput{
+							Bucket: aws.String(bucket),
+							Delete: &types.Delete{Objects: toDelete},
+						})
+					if err != nil {
+						fmt.Errorf("DeleteObjects unexpected failure: %s", err.Error())
 					}
 					doneDeletes.Done()
 				}
 				doneDeletes.Add(1)
-				go doDelete(bucket, delete)
+				go doDelete(bucket, objectIds)
 			}
 			// Advance to next versions
-			if listVersions.IsTruncated == nil || !*listVersions.IsTruncated {
+			if !listVersions.IsTruncated {
 				break
 			}
 			keyMarker = listVersions.NextKeyMarker
@@ -182,50 +176,6 @@ func deleteAllObjects() {
 	if err != nil {
 		log.Fatalf("FATAL: Unable to delete objects from bucket: %v", err)
 	}
-}
-
-// canonicalAmzHeaders -- return the x-amz headers canonicalized
-func canonicalAmzHeaders(req *http.Request) string {
-	// Parse out all x-amz headers
-	var headers []string
-	for header := range req.Header {
-		norm := strings.ToLower(strings.TrimSpace(header))
-		if strings.HasPrefix(norm, "x-amz") {
-			headers = append(headers, norm)
-		}
-	}
-	// Put them in sorted order
-	sort.Strings(headers)
-	// Now add back the values
-	for n, header := range headers {
-		headers[n] = header + ":" + strings.Replace(req.Header.Get(header), "\n", " ", -1)
-	}
-	// Finally, put them back together
-	if len(headers) > 0 {
-		return strings.Join(headers, "\n") + "\n"
-	} else {
-		return ""
-	}
-}
-
-func hmacSHA1(key []byte, content string) []byte {
-	mac := hmac.New(sha1.New, key)
-	mac.Write([]byte(content))
-	return mac.Sum(nil)
-}
-
-func setSignature(req *http.Request) {
-	// Setup default parameters
-	dateHdr := time.Now().UTC().Format("20060102T150405Z")
-	req.Header.Set("X-Amz-Date", dateHdr)
-	// Get the canonical resource and header
-	canonicalResource := req.URL.EscapedPath()
-	canonicalHeaders := canonicalAmzHeaders(req)
-	stringToSign := req.Method + "\n" + req.Header.Get("Content-MD5") + "\n" + req.Header.Get("Content-Type") + "\n\n" +
-		canonicalHeaders + canonicalResource
-	hash := hmacSHA1([]byte(secret_key), stringToSign)
-	signature := base64.StdEncoding.EncodeToString(hash)
-	req.Header.Set("Authorization", fmt.Sprintf("AWS %s:%s", access_key, signature))
 }
 
 func runUpload(thread_num int) {
