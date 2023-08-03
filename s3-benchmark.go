@@ -6,11 +6,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
-	"math/rand"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -202,10 +203,11 @@ func runDownload(thread_num int) {
 	client := getS3Client()
 	for time.Now().Before(endtime) {
 		atomic.AddInt32(&download_count, 1)
-		objnum := rand.Int31n(download_count) + 1
+		randnum, _ := rand.Int(rand.Reader, big.NewInt(int64(download_count)))
+		objnum := randnum.Int64() + 1
 		result, err := client.GetObject(context.TODO(), &s3.GetObjectInput{
 			Bucket: aws.String(bucket),
-			Key:    aws.String(strconv.FormatInt(int64(objnum), 10)),
+			Key:    aws.String(strconv.FormatInt(objnum, 10)),
 		})
 		if err != nil {
 			log.Fatalf("Couldn't get object %v:%v. Here's why: %v\n", bucket, objnum, err)
