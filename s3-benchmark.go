@@ -178,10 +178,9 @@ func deleteAllObjects() {
 func runUpload(thread_num int) {
 	client := getS3Client()
 	for time.Now().Before(endtime) {
-
 		objnum := atomic.AddInt32(&upload_count, 1)
 		fileobj := bytes.NewReader(object_data)
-		resp, err := client.PutObject(context.TODO(), &s3.PutObjectInput{
+		_, err := client.PutObject(context.TODO(), &s3.PutObjectInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(strconv.FormatInt(int64(objnum), 10)),
 			Body:   fileobj,
@@ -189,8 +188,6 @@ func runUpload(thread_num int) {
 		if err != nil {
 			log.Fatalf("Couldn't upload to %v:%v. Here's why: %v\n",
 				bucket, objnum, err)
-		} else {
-			fmt.Printf("Upload resp: %+v\n", resp)
 		}
 	}
 	// Remember last done time
@@ -203,7 +200,7 @@ func runDownload(thread_num int) {
 	client := getS3Client()
 	for time.Now().Before(endtime) {
 		atomic.AddInt32(&download_count, 1)
-		randnum, _ := rand.Int(rand.Reader, big.NewInt(int64(download_count)))
+		randnum, _ := rand.Int(rand.Reader, big.NewInt(int64(upload_count)))
 		objnum := randnum.Int64() + 1
 		result, err := client.GetObject(context.TODO(), &s3.GetObjectInput{
 			Bucket: aws.String(bucket),
