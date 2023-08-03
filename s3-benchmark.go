@@ -6,13 +6,9 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
 	"crypto/tls"
-	"encoding/base64"
 	"flag"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
@@ -179,27 +175,21 @@ func deleteAllObjects() {
 }
 
 func runUpload(thread_num int) {
+	client := getS3Client()
 	for time.Now().Before(endtime) {
+
 		objnum := atomic.AddInt32(&upload_count, 1)
 		fileobj := bytes.NewReader(object_data)
-		prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, objnum)
-		req, _ := http.NewRequest("PUT", prefix, fileobj)
-		req.Header.Set("Content-Length", strconv.FormatUint(object_size, 10))
-		req.Header.Set("Content-MD5", object_data_md5)
-		setSignature(req)
-		if resp, err := httpClient.Do(req); err != nil {
-			log.Fatalf("FATAL: Error uploading object %s: %v", prefix, err)
-		} else if resp != nil && resp.StatusCode != http.StatusOK {
-			if resp.StatusCode == http.StatusServiceUnavailable {
-				atomic.AddInt32(&upload_slowdown_count, 1)
-				atomic.AddInt32(&upload_count, -1)
-			} else {
-				fmt.Printf("Upload status %s: resp: %+v\n", resp.Status, resp)
-				if resp.Body != nil {
-					body, _ := ioutil.ReadAll(resp.Body)
-					fmt.Printf("Body: %s\n", string(body))
-				}
-			}
+		resp, err := client.PutObject(context.TODO(), &s3.PutObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(strconv.FormatInt(int64(objnum), 10)),
+			Body:   fileobj,
+		})
+		if err != nil {
+			log.Fatalf("Couldn't upload to %v:%v. Here's why: %v\n",
+				bucket, objnum, err)
+		} else {
+			fmt.Printf("Upload resp: %+v\n", resp)
 		}
 	}
 	// Remember last done time
@@ -209,22 +199,18 @@ func runUpload(thread_num int) {
 }
 
 func runDownload(thread_num int) {
+	client := getS3Client()
 	for time.Now().Before(endtime) {
 		atomic.AddInt32(&download_count, 1)
 		objnum := rand.Int31n(download_count) + 1
-		prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, objnum)
-		req, _ := http.NewRequest("GET", prefix, nil)
-		setSignature(req)
-		if resp, err := httpClient.Do(req); err != nil {
-			log.Fatalf("FATAL: Error downloading object %s: %v", prefix, err)
-		} else if resp != nil && resp.Body != nil {
-			if resp.StatusCode == http.StatusServiceUnavailable {
-				atomic.AddInt32(&download_slowdown_count, 1)
-				atomic.AddInt32(&download_count, -1)
-			} else {
-				io.Copy(ioutil.Discard, resp.Body)
-			}
+		result, err := client.GetObject(context.TODO(), &s3.GetObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(strconv.FormatInt(int64(objnum), 10)),
+		})
+		if err != nil {
+			log.Fatalf("Couldn't get object %v:%v. Here's why: %v\n", bucket, objnum, err)
 		}
+		defer result.Body.Close()
 	}
 	// Remember last done time
 	download_finish = time.Now()
@@ -233,19 +219,18 @@ func runDownload(thread_num int) {
 }
 
 func runDelete(thread_num int) {
+	client := getS3Client()
 	for {
 		objnum := atomic.AddInt32(&delete_count, 1)
 		if objnum > upload_count {
 			break
 		}
-		prefix := fmt.Sprintf("%s/%s/Object-%d", url_host, bucket, objnum)
-		req, _ := http.NewRequest("DELETE", prefix, nil)
-		setSignature(req)
-		if resp, err := httpClient.Do(req); err != nil {
-			log.Fatalf("FATAL: Error deleting object %s: %v", prefix, err)
-		} else if resp != nil && resp.StatusCode == http.StatusServiceUnavailable {
-			atomic.AddInt32(&delete_slowdown_count, 1)
-			atomic.AddInt32(&delete_count, -1)
+		_, err := client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(strconv.FormatInt(int64(objnum), 10)),
+		})
+		if err != nil {
+			log.Fatalf("Couldn't delete objects from bucket %v. Here's why: %v\n", bucket, err)
 		}
 	}
 	// Remember last done time
@@ -293,9 +278,6 @@ func main() {
 	// Initialize data for the bucket
 	object_data = make([]byte, object_size)
 	rand.Read(object_data)
-	hasher := md5.New()
-	hasher.Write(object_data)
-	object_data_md5 = base64.StdEncoding.EncodeToString(hasher.Sum(nil))
 
 	// Create the bucket and delete all the objects
 	createBucket(true)
